@@ -177,24 +177,23 @@ send_file(Req, Code, Headers, Filename, {Offset, Length}) ->
     ResponseHeaders = [<<"HTTP/1.1 ">>, status(Code), <<"\r\n">>,
                        encode_headers(Headers), <<"\r\n">>],
 
-    case file:open(Filename, [read, raw, binary]) of
-        {ok, Fd} ->
-            try elli_tcp:send(Req#req.socket, ResponseHeaders) of
+    case catch tibor_nif:get(Filename) of
+        {'EXIT', FileError} ->
+            handle_event(Mod, file_error, [FileError], Args);
+        Binary ->
+            case elli_tcp:send(Req#req.socket, ResponseHeaders) of
                 ok ->
-                    case elli_tcp:sendfile(Fd, Req#req.socket, Offset, Length, []) of
-                        {ok, _BytesSent} ->
+                    case elli_tcp:sendfile(Binary, Req#req.socket, Offset, Length, []) of
+                        ok ->
                             ok;
                         {error, Closed} when Closed =:= closed orelse Closed =:= enotconn ->
                             handle_event(Mod, client_closed, [before_response], Args)
                     end;
                 {error, Closed} when Closed =:= closed orelse Closed =:= enotconn ->
                     handle_event(Mod, client_closed, [before_response], Args)
-            after
-                file:close(Fd)
-            end;
-        {error, FileError} ->
-            handle_event(Mod, file_error, [FileError], Args)
+            end
     end, ok.
+
 
 send_bad_request(Socket) ->
     %% To send a response, we must first have received everything the
@@ -203,7 +202,7 @@ send_bad_request(Socket) ->
 
     Body = <<"Bad Request">>,
     Response = [<<"HTTP/1.1 ">>, status(400), <<"\r\n">>,
-               <<"Content-Length: ">>, integer_to_list(size(Body)), <<"\r\n">>,
+                <<"Content-Length: ">>, integer_to_list(size(Body)), <<"\r\n">>,
                 <<"\r\n">>],
     elli_tcp:send(Socket, Response).
 
@@ -557,13 +556,13 @@ split_path(Path) ->
 %% cowboy_http:x_www_form_urlencoded/2
 -spec split_args(binary()) -> list({binary(), binary() | true}).
 split_args(<<>>) ->
-	[];
+    [];
 split_args(Qs) ->
-	Tokens = binary:split(Qs, <<"&">>, [global, trim]),
-	[case binary:split(Token, <<"=">>) of
-		[Token] -> {Token, true};
-		[Name, Value] -> {Name, Value}
-	end || Token <- Tokens].
+    Tokens = binary:split(Qs, <<"&">>, [global, trim]),
+    [case binary:split(Token, <<"=">>) of
+         [Token] -> {Token, true};
+         [Name, Value] -> {Name, Value}
+     end || Token <- Tokens].
 
 
 %%
@@ -610,9 +609,9 @@ get_timings() ->
                               true -> erase({time, Key})
                           end,
                           [{Key, Val}];
-                     (_) ->
+                      (_) ->
                           []
-                 end, get()).
+                  end, get()).
 
 
 %%

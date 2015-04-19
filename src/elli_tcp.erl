@@ -68,8 +68,8 @@ setopts({plain, Socket}, Opts) ->
 setopts({ssl, Socket}, Opts) ->
     ssl:setopts(Socket, Opts).
 
-sendfile(Fd, {plain, Socket}, Offset, Length, Opts) ->
-    file:sendfile(Fd, Socket, Offset, Length, Opts);
+sendfile(Data, {plain, Socket}, _Offset, _Length, _Opts) ->
+    gen_tcp:send(Socket, Data);
 sendfile(_Fd, {ssl, _}, _Offset, _Length, _Opts) ->
     throw(ssl_sendfile_not_supported).
 
